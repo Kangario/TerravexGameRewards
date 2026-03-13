@@ -11,7 +11,7 @@ function getUserProfileKey(userId) {
 }
 
 function getUsernameIndexKey(username) {
-    return `username:${username.toLowerCase()}`;
+    return `username`;
 }
 
 function getDaysInGame(dateRegistration) {
