@@ -7,11 +7,11 @@ const USERNAME_MAX_LENGTH = 24;
 const USERNAME_REGEX = /^[A-Za-z0-9_]+$/;
 
 function getUserProfileKey(userId) {
-    return `user:${userId}:profile`;
+    return userId;
 }
 
 function getUsernameIndexKey(username) {
-    return `username_index:${username.toLowerCase()}`;
+    return `username:${username.toLowerCase()}`;
 }
 
 function getDaysInGame(dateRegistration) {
