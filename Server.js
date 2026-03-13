@@ -6,22 +6,37 @@ const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 24;
 const USERNAME_REGEX = /^[A-Za-z0-9_]+$/;
 
-function getUserProfileKey(userId) {
-    return userId;
+function getUserIdFromBody(body = {}) {
+    const rawUserId = body.userId ?? body.playerId;
+    if (typeof rawUserId !== "string") {
+        return null;
+    }
+
+    const normalizedUserId = rawUserId.trim();
+    return normalizedUserId || null;
+}
+
+function getUserProfileKeyCandidates(userId) {
+    return [
+        `user:${userId}:profile`,
+        `user:${userId}`,
+        `profile:${userId}`,
+        `player:${userId}`
+    ];
 }
 
 function getUsernameIndexKey(username) {
-    return `username`;
+    return `username_index:${username.toLowerCase()}`;
 }
 
 function getDaysInGame(dateRegistration) {
-    if (!Number.isFinite(dateRegistration)) {
+    const registrationDateMs = Number(dateRegistration);
+
+    if (!Number.isFinite(registrationDateMs) || registrationDateMs <= 0) {
         return 0;
     }
 
-    const registrationDateMs = Math.max(0, Number(dateRegistration));
     const differenceMs = Date.now() - registrationDateMs;
-
     if (differenceMs <= 0) {
         return 0;
     }
@@ -32,24 +47,64 @@ function getDaysInGame(dateRegistration) {
 function buildPublicProfile(profile) {
     return {
         username: profile.username,
-        level: profile.level,
-        gold: profile.gold,
-        victories: profile.victories,
-        defeats: profile.defeats,
-        rating: profile.rating,
+        level: Number(profile.level) || 0,
+        gold: Number(profile.gold) || 0,
+        victories: Number(profile.victories) || 0,
+        defeats: Number(profile.defeats) || 0,
+        rating: Number(profile.rating) || 0,
         daysInGame: getDaysInGame(profile.dateRegistration)
     };
 }
 
-async function loadUserProfile(redis, userId) {
-    const userProfileKey = getUserProfileKey(userId);
-    const rawProfile = await redis.get(userProfileKey);
-
-    if (!rawProfile) {
+function parseRawProfile(type, rawValue) {
+    if (!rawValue) {
         return null;
     }
 
-    return JSON.parse(rawProfile);
+    if (type === "string") {
+        const parsed = JSON.parse(rawValue);
+        if (parsed && typeof parsed === "object") {
+            if (parsed.profile && typeof parsed.profile === "object") {
+                return parsed.profile;
+            }
+            return parsed;
+        }
+        return null;
+    }
+
+    if (type === "hash") {
+        return rawValue;
+    }
+
+    return null;
+}
+
+async function loadUserProfile(redis, userId) {
+    for (const key of getUserProfileKeyCandidates(userId)) {
+        const type = await redis.type(key);
+
+        if (type === "none") {
+            continue;
+        }
+
+        if (type === "string") {
+            const rawProfile = await redis.get(key);
+            const parsedProfile = parseRawProfile(type, rawProfile);
+
+            if (parsedProfile) {
+                return { profile: parsedProfile, storageType: "string", key };
+            }
+        }
+
+        if (type === "hash") {
+            const hashProfile = await redis.hGetAll(key);
+            if (Object.keys(hashProfile).length > 0) {
+                return { profile: parseRawProfile(type, hashProfile), storageType: "hash", key };
+            }
+        }
+    }
+
+    return null;
 }
 
 async function start() {
@@ -186,20 +241,23 @@ async function start() {
     });
 
 
+    // =====================================
+    // 👤 GET PROFILE (public fields)
+    // =====================================
     app.post("/profile/get", async (req, res) => {
         try {
-            const { userId } = req.body;
+            const userId = getUserIdFromBody(req.body);
 
-            if (!userId || typeof userId !== "string") {
+            if (!userId) {
                 return res.status(400).json({
                     ok: false,
-                    error: "userId is required"
+                    error: "userId (or playerId) is required"
                 });
             }
 
-            const profile = await loadUserProfile(redis, userId);
+            const loadedProfile = await loadUserProfile(redis, userId);
 
-            if (!profile) {
+            if (!loadedProfile?.profile) {
                 return res.status(404).json({
                     ok: false,
                     error: "User profile not found"
@@ -208,7 +266,7 @@ async function start() {
 
             return res.json({
                 ok: true,
-                profile: buildPublicProfile(profile)
+                profile: buildPublicProfile(loadedProfile.profile)
             });
         } catch (err) {
             console.error("[Profile] Get error:", err);
@@ -224,12 +282,13 @@ async function start() {
     // =====================================
     app.post("/profile/username/update", async (req, res) => {
         try {
-            const { userId, username } = req.body;
+            const userId = getUserIdFromBody(req.body);
+            const { username } = req.body;
 
-            if (!userId || typeof userId !== "string") {
+            if (!userId) {
                 return res.status(400).json({
                     ok: false,
-                    error: "userId is required"
+                    error: "userId (or playerId) is required"
                 });
             }
 
@@ -263,7 +322,8 @@ async function start() {
                 });
             }
 
-            const profile = await loadUserProfile(redis, userId);
+            const loadedProfile = await loadUserProfile(redis, userId);
+            const profile = loadedProfile?.profile;
 
             if (!profile) {
                 return res.status(404).json({
@@ -272,7 +332,14 @@ async function start() {
                 });
             }
 
-            const previousUsername = profile.username;
+            const previousUsername = String(profile.username || "").trim();
+
+            if (!previousUsername) {
+                return res.status(400).json({
+                    ok: false,
+                    error: "Current username is missing in profile"
+                });
+            }
 
             if (previousUsername === normalizedUsername) {
                 return res.status(400).json({
@@ -298,11 +365,18 @@ async function start() {
 
             profile.username = normalizedUsername;
 
-            const transactionResult = await redis.multi()
-                .set(getUserProfileKey(userId), JSON.stringify(profile))
-                .set(newIndexKey, userId)
-                .del(oldIndexKey)
-                .exec();
+            const tx = redis.multi();
+
+            if (loadedProfile.storageType === "hash") {
+                tx.hSet(loadedProfile.key, profile);
+            } else {
+                tx.set(loadedProfile.key, JSON.stringify(profile));
+            }
+
+            tx.set(newIndexKey, userId);
+            tx.del(oldIndexKey);
+
+            const transactionResult = await tx.exec();
 
             if (!transactionResult) {
                 return res.status(409).json({
@@ -324,6 +398,7 @@ async function start() {
             });
         }
     });
+
 
     // =====================================
     // ❤️ HEALTH
