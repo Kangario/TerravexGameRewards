@@ -108,26 +108,35 @@ async function loadUserProfile(redis, userId) {
 }
 
 async function start() {
-    const redis  = createClient({
+    const redis = createClient({
         username: "default",
         password: "af0gO9r23iS9w7sYd8T0XtQktQR0ZXnl",
         socket: { host: "redis-17419.c328.europe-west3-1.gce.cloud.redislabs.com", port: 17419 }
     });
 
     redis.on("error", (err) => console.error("Rewards Redis error:", err));
-    await redis.connect();
-
-    console.log("✅ Redis connected (Rewards)");
 
     const app = express();
     app.use(express.json());
 
-    const PORT = Number(process.env.REWARDS_PORT || 3002);
+    const PORT = Number(process.env.PORT || process.env.REWARDS_PORT || 3002);
+    const HOST = "0.0.0.0";
+
+    const ensureRedisReady = (req, res, next) => {
+        if (!redis.isReady) {
+            return res.status(503).json({
+                ok: false,
+                error: "Service is starting, Redis is not ready yet"
+            });
+        }
+
+        next();
+    };
 
     // =====================================
     // 🎁 CREATE REWARD
     // =====================================
-    app.post("/rewards/create", async (req, res) => {
+    app.post("/rewards/create", ensureRedisReady, async (req, res) => {
         try {
             const { playerId, rewardType, payload = {} } = req.body;
 
@@ -167,7 +176,7 @@ async function start() {
     // =====================================
     // 🏆 CLAIM REWARD
     // =====================================
-    app.post("/rewards/claim", async (req, res) => {
+    app.post("/rewards/claim", ensureRedisReady, async (req, res) => {
         try {
             const { playerId } = req.body;
 
@@ -208,7 +217,7 @@ async function start() {
     // =====================================
     // 📦 GET ALL REWARDS (опционально)
     // =====================================
-    app.post("/rewards/list", async (req, res) => {
+    app.post("/rewards/list", ensureRedisReady, async (req, res) => {
         try {
             const { playerId } = req.body;
 
@@ -244,7 +253,7 @@ async function start() {
     // =====================================
     // 👤 GET PROFILE (public fields)
     // =====================================
-    app.post("/profile/get", async (req, res) => {
+    app.post("/profile/get", ensureRedisReady, async (req, res) => {
         try {
             const userId = getUserIdFromBody(req.body);
 
@@ -280,7 +289,7 @@ async function start() {
     // =====================================
     // ✏️ UPDATE USERNAME
     // =====================================
-    app.post("/profile/username/update", async (req, res) => {
+    app.post("/profile/username/update", ensureRedisReady, async (req, res) => {
         try {
             const userId = getUserIdFromBody(req.body);
             const { username } = req.body;
@@ -404,12 +413,23 @@ async function start() {
     // ❤️ HEALTH
     // =====================================
     app.get("/health", (req, res) => {
-        res.json({ status: "ok" });
+        res.json({
+            status: redis.isReady ? "ok" : "starting",
+            redisReady: redis.isReady
+        });
     });
 
-    app.listen(PORT, () => {
-        console.log(`🚀 Rewards server started on http://localhost:${PORT}`);
+    app.listen(PORT, HOST, () => {
+        console.log(`🚀 Rewards server started on http://${HOST}:${PORT}`);
     });
+
+    redis.connect()
+        .then(() => {
+            console.log("✅ Redis connected (Rewards)");
+        })
+        .catch((err) => {
+            console.error("❌ Failed to connect to Redis during startup:", err);
+        });
 }
 
 start();
