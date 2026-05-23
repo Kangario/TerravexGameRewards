@@ -25,7 +25,9 @@ class RewardService {
 
         const loadedProfile = await this.profileRepository.load(playerId);
         if (!loadedProfile) return null;
-        
+
+        console.log("Reward payload:", reward.payload);
+
         const applied = this.applyRewardToProfile(
             loadedProfile.profile,
             reward.payload
