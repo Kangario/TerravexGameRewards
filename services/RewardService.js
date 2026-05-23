@@ -30,7 +30,7 @@ class RewardService {
 
         const applied = this.applyRewardToProfile(
             loadedProfile.profile,
-            reward.payload
+            reward.payload.rewards
         );
         
         await this.profileRepository.save(loadedProfile);
