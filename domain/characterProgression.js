@@ -11,14 +11,24 @@ function getHeroIdentity(hero) {
 
 function sameHero(hero, identity = {}) {
     const heroIdentity = getHeroIdentity(hero);
-
+    
     if (identity.instanceId && heroIdentity.instanceId === identity.instanceId) {
         return true;
     }
-
-    return identity.heroId !== null &&
+    
+    if (identity.heroId && heroIdentity.instanceId === identity.heroId) {
+        return true;
+    }
+    
+    if (
+        identity.heroId !== null &&
         identity.heroId !== undefined &&
-        heroIdentity.heroId === identity.heroId;
+        heroIdentity.heroId === identity.heroId
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 function normalizeHeroProgression(hero) {
