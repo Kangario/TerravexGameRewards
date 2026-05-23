@@ -38,7 +38,7 @@ class RewardService {
             rewardType,
             payload: {
                 ...battle,
-                rewards: reward || {},
+                rewards: applied.reward,
                 profile: applied.profile,
                 characters: applied.characters
             }
@@ -70,9 +70,11 @@ class RewardService {
                 const identity = getHeroIdentity(hero);
 
                 if ((reward.removedHeroes || []).some((removedHero) => sameHero(hero, removedHero))) {
+                    const namePayload = this.getHeroNamePayload(hero);
                     characterChanges.push({
                         location: collection.location,
                         identity,
+                        ...namePayload,
                         removed: true,
                         before: clone(hero),
                         after: null,
@@ -81,17 +83,32 @@ class RewardService {
                     continue;
                 }
 
-                const xpReward = (reward.killXp || []).find((killReward) => sameHero(hero, killReward));
-                const xpChange = addHeroXp(hero, xpReward?.xpDelta);
+                const xpRewards = this.findHeroXpRewards(hero, reward);
+                const xpDelta = xpRewards.reduce((sum, xpReward) => sum + Number(xpReward.xpDelta || 0), 0);
+                const xpChange = addHeroXp(hero, xpDelta);
 
                 if (xpChange) {
+                    const namePayload = this.getHeroNamePayload(hero, xpRewards[0]);
+                    for (const xpReward of xpRewards) {
+                        Object.assign(xpReward, namePayload);
+                    }
+
                     characterChanges.push({
                         location: collection.location,
                         identity,
+                        ...namePayload,
                         removed: false,
                         before: xpChange.before,
                         after: xpChange.after,
-                        reward: { xpDelta: xpChange.xpDelta }
+                        reward: {
+                            xpDelta: xpChange.xpDelta,
+                            sources: xpRewards.map((xpReward) => ({
+                                source: xpReward.source ?? null,
+                                kills: xpReward.kills ?? null,
+                                xpDelta: Number(xpReward.xpDelta || 0),
+                                ...namePayload
+                            }))
+                        }
                     });
                 }
 
@@ -102,11 +119,42 @@ class RewardService {
         }
 
         return {
+            reward,
             profile: {
                 before: beforeProfile,
                 after: this.getProfileProgressSnapshot(profile)
             },
             characters: characterChanges
+        };
+    }
+
+    findHeroXpRewards(hero, reward) {
+        return [
+            ...(Array.isArray(reward.survivorXp) ? reward.survivorXp : []),
+            ...(Array.isArray(reward.killXp) ? reward.killXp : [])
+        ].filter((xpReward) => sameHero(hero, xpReward));
+    }
+
+    getHeroNamePayload(hero, fallback = {}) {
+        const displayName =
+            fallback.Name ??
+            fallback.HeroName ??
+            fallback.DisplayName ??
+            hero.Name ??
+            hero.HeroName ??
+            hero.DisplayName ??
+            hero.name ??
+            hero.heroName ??
+            null;
+
+        if (!displayName) {
+            return {};
+        }
+
+        return {
+            Name: displayName,
+            HeroName: displayName,
+            DisplayName: displayName
         };
     }
 

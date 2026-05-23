@@ -41,7 +41,7 @@ test("battle reward stores character before and after xp snapshots", async () =>
         rating: 1000,
         victories: 0,
         defeats: 0,
-        equipmentHeroes: [{ Id: 7, InstanceId: "hero-7", Lvl: 1, Xp: 100 }]
+        equipmentHeroes: [{ Id: 7, InstanceId: "hero-7", Name: "Gargonruk", Lvl: 1, Xp: 100 }]
     };
     const { profileRepository, rewardRepository, rewards } = createRepositories(profile);
     const service = new RewardService(profileRepository, rewardRepository);
@@ -54,19 +54,24 @@ test("battle reward stores character before and after xp snapshots", async () =>
             goldDelta: 100,
             ratingDelta: 100,
             victoriesDelta: 1,
-            killXp: [{ instanceId: "hero-7", xpDelta: 50 }],
+            survivorXp: [{ instanceId: "hero-7", xpDelta: 50, source: "pve_win" }],
+            killXp: [{ instanceId: "hero-7", xpDelta: 500, kills: 10 }],
             removedHeroes: []
         }
     });
 
-    assert.equal(profile.equipmentHeroes[0].Xp, 150);
+    assert.equal(profile.equipmentHeroes[0].Xp, 650);
     assert.equal(result.characters[0].before.Xp, 100);
-    assert.equal(result.characters[0].after.Xp, 150);
+    assert.equal(result.characters[0].after.Xp, 650);
     assert.deepEqual(result.profile, {
         before: { gold: 10, rating: 1000, victories: 0, defeats: 0 },
         after: { gold: 110, rating: 1100, victories: 1, defeats: 0 }
     });
-    assert.equal(rewards[0].reward.payload.characters[0].reward.xpDelta, 50);
+    assert.equal(rewards[0].reward.payload.characters[0].reward.xpDelta, 550);
+    assert.equal(rewards[0].reward.payload.rewards.survivorXp[0].Name, "Gargonruk");
+    assert.equal(rewards[0].reward.payload.rewards.killXp[0].Name, "Gargonruk");
+    assert.equal(rewards[0].reward.payload.rewards.killXp[0].HeroName, "Gargonruk");
+    assert.equal(rewards[0].reward.payload.rewards.killXp[0].DisplayName, "Gargonruk");
 });
 
 test("character level up post service returns old and new character state", async () => {
