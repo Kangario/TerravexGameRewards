@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const { applyRewardToProfile } = require("../domain/CharacterProgression");
 const {
     addHeroXp,
     clone,
