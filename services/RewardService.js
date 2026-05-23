@@ -20,25 +20,7 @@ class RewardService {
     }
 
     async claim(playerId) {
-        const reward = await this.rewardRepository.claim(playerId);
-        if (!reward) return null;
-
-        const loadedProfile = await this.profileRepository.load(playerId);
-        if (!loadedProfile) return null;
-
-        console.log("Reward payload:", JSON.stringify(reward.payload, null, 2));
-
-        const applied = this.applyRewardToProfile(
-            loadedProfile.profile,
-            reward.payload.rewards
-        );
-        
-        await this.profileRepository.save(loadedProfile);
-
-        return {
-            reward,
-            applied
-        };
+        return this.rewardRepository.claim(playerId);
     }
 
     async list(playerId) {
