@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { applyRewardToProfile } = require("../domain/CharacterProgression");
 const {
     addHeroXp,
     clone,
@@ -20,7 +21,23 @@ class RewardService {
     }
 
     async claim(playerId) {
-        return this.rewardRepository.claim(playerId);
+        const reward = await this.rewardRepository.claim(playerId);
+        if (!reward) return null;
+
+        const loadedProfile = await this.profileRepository.load(playerId);
+        if (!loadedProfile) return null;
+        
+        const applied = this.applyRewardToProfile(
+            loadedProfile.profile,
+            reward.payload
+        );
+        
+        await this.profileRepository.save(loadedProfile);
+
+        return {
+            reward,
+            applied
+        };
     }
 
     async list(playerId) {
@@ -91,6 +108,12 @@ class RewardService {
                     const namePayload = this.getHeroNamePayload(hero, xpRewards[0]);
                     for (const xpReward of xpRewards) {
                         Object.assign(xpReward, namePayload);
+                    }
+                    
+                    while (hero.Xp >= hero.Lvl * 100) {
+                        hero.Xp -= hero.Lvl * 100;
+                        hero.Lvl += 1;
+                        hero.StatUpPoints += 5;
                     }
 
                     characterChanges.push({

@@ -86,6 +86,7 @@ function findHero(profile, identity) {
     return null;
 }
 
+
 module.exports = {
     addHeroXp,
     clone,
