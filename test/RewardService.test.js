@@ -107,6 +107,34 @@ test("pve battle reward does not apply or queue rating delta", async () => {
     assert.equal("ratingDelta" in rewards[0].reward.payload.rewards, false);
 });
 
+test("battle reward remembers removed hero ids for shop filtering", async () => {
+    const profile = {
+        gold: 10,
+        rating: 1000,
+        victories: 0,
+        defeats: 0,
+        deadHeroIds: [3],
+        equipmentHeroes: [{ Id: 7, InstanceId: "hero-7", Name: "Gargonruk", Lvl: 10, Xp: 100 }]
+    };
+    const { profileRepository } = createRepositories(profile);
+    const service = new RewardService(profileRepository, { async enqueue() {} });
+
+    const result = await service.applyBattleReward({
+        playerId: "u1",
+        rewardType: "battle_loss",
+        battle: { matchId: "m1", outcome: "lose" },
+        reward: {
+            defeatsDelta: 1,
+            removedHeroes: [{ instanceId: "hero-7" }]
+        }
+    });
+
+    assert.deepEqual(profile.equipmentHeroes, []);
+    assert.deepEqual(profile.deadHeroIds, [3, 7]);
+    assert.equal(result.characters[0].removed, true);
+    assert.equal(result.characters[0].identity.heroId, 7);
+});
+
 test("character level up post service returns old and new character state", async () => {
     const profile = {
         heroesBought: [{ Id: 9, InstanceId: "hero-9", Lvl: 2, Xp: 25, StatUpPoints: 1 }]

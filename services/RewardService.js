@@ -72,6 +72,7 @@ class RewardService {
 
                 if ((appliedReward.removedHeroes || []).some((removedHero) => sameHero(hero, removedHero))) {
                     const namePayload = this.getHeroNamePayload(hero);
+                    this.rememberDeadHero(profile, identity);
                     characterChanges.push({
                         location: collection.location,
                         identity,
@@ -143,6 +144,23 @@ class RewardService {
         }
 
         return appliedReward;
+    }
+
+    rememberDeadHero(profile, identity) {
+        const heroId = identity?.heroId;
+        if (heroId === null || heroId === undefined) {
+            return;
+        }
+
+        if (!Array.isArray(profile.deadHeroIds)) {
+            profile.deadHeroIds = [];
+        }
+
+        const heroIdKey = String(heroId);
+        const alreadyTracked = profile.deadHeroIds.some((deadHeroId) => String(deadHeroId) === heroIdKey);
+        if (!alreadyTracked) {
+            profile.deadHeroIds.push(heroId);
+        }
     }
 
     isPveBattle(battle = {}) {
