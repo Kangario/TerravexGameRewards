@@ -41,7 +41,7 @@ test("battle reward stores character before and after xp snapshots", async () =>
         rating: 1000,
         victories: 0,
         defeats: 0,
-        equipmentHeroes: [{ Id: 7, InstanceId: "hero-7", Name: "Gargonruk", Lvl: 1, Xp: 100 }]
+        equipmentHeroes: [{ Id: 7, InstanceId: "hero-7", Name: "Gargonruk", Lvl: 10, Xp: 100 }]
     };
     const { profileRepository, rewardRepository, rewards } = createRepositories(profile);
     const service = new RewardService(profileRepository, rewardRepository);
@@ -72,6 +72,39 @@ test("battle reward stores character before and after xp snapshots", async () =>
     assert.equal(rewards[0].reward.payload.rewards.killXp[0].Name, "Gargonruk");
     assert.equal(rewards[0].reward.payload.rewards.killXp[0].HeroName, "Gargonruk");
     assert.equal(rewards[0].reward.payload.rewards.killXp[0].DisplayName, "Gargonruk");
+});
+
+test("pve battle reward does not apply or queue rating delta", async () => {
+    const profile = {
+        gold: 10,
+        rating: 1000,
+        victories: 0,
+        defeats: 0,
+        equipmentHeroes: []
+    };
+    const { profileRepository, rewardRepository, rewards } = createRepositories(profile);
+    const service = new RewardService(profileRepository, rewardRepository);
+
+    const result = await service.applyBattleReward({
+        playerId: "u1",
+        rewardType: "battle_win",
+        battle: { matchId: "pve-1", mode: "PVE", outcome: "win" },
+        reward: {
+            goldDelta: 100,
+            ratingDelta: 100,
+            victoriesDelta: 1,
+            defeatsDelta: 0,
+            killXp: [],
+            survivorXp: [],
+            removedHeroes: []
+        }
+    });
+
+    assert.deepEqual(result.profile, {
+        before: { gold: 10, rating: 1000, victories: 0, defeats: 0 },
+        after: { gold: 110, rating: 1000, victories: 1, defeats: 0 }
+    });
+    assert.equal("ratingDelta" in rewards[0].reward.payload.rewards, false);
 });
 
 test("character level up post service returns old and new character state", async () => {

@@ -33,7 +33,7 @@ class RewardService {
             return null;
         }
 
-        const applied = this.applyRewardToProfile(loadedProfile.profile, reward || {});
+        const applied = this.applyRewardToProfile(loadedProfile.profile, reward || {}, { battle });
         const queuedReward = this.buildReward({
             rewardType,
             payload: {
@@ -54,13 +54,14 @@ class RewardService {
         };
     }
 
-    applyRewardToProfile(profile, reward) {
+    applyRewardToProfile(profile, reward, { battle = {} } = {}) {
         const beforeProfile = this.getProfileProgressSnapshot(profile);
+        const appliedReward = this.normalizeBattleReward(reward, battle);
 
-        profile.gold = Number(profile.gold || 0) + Number(reward.goldDelta || 0);
-        profile.rating = Number(profile.rating || 0) + Number(reward.ratingDelta || 0);
-        profile.victories = Number(profile.victories || 0) + Number(reward.victoriesDelta || 0);
-        profile.defeats = Number(profile.defeats || 0) + Number(reward.defeatsDelta || 0);
+        profile.gold = Number(profile.gold || 0) + Number(appliedReward.goldDelta || 0);
+        profile.rating = Number(profile.rating || 0) + Number(appliedReward.ratingDelta || 0);
+        profile.victories = Number(profile.victories || 0) + Number(appliedReward.victoriesDelta || 0);
+        profile.defeats = Number(profile.defeats || 0) + Number(appliedReward.defeatsDelta || 0);
 
         const characterChanges = [];
         for (const collection of getHeroCollections(profile)) {
@@ -69,7 +70,7 @@ class RewardService {
             for (const hero of collection.heroes) {
                 const identity = getHeroIdentity(hero);
 
-                if ((reward.removedHeroes || []).some((removedHero) => sameHero(hero, removedHero))) {
+                if ((appliedReward.removedHeroes || []).some((removedHero) => sameHero(hero, removedHero))) {
                     const namePayload = this.getHeroNamePayload(hero);
                     characterChanges.push({
                         location: collection.location,
@@ -83,7 +84,7 @@ class RewardService {
                     continue;
                 }
 
-                const xpRewards = this.findHeroXpRewards(hero, reward);
+                const xpRewards = this.findHeroXpRewards(hero, appliedReward);
                 const xpDelta = xpRewards.reduce((sum, xpReward) => sum + Number(xpReward.xpDelta || 0), 0);
                 const xpChange = addHeroXp(hero, xpDelta);
 
@@ -125,13 +126,27 @@ class RewardService {
         }
 
         return {
-            reward,
+            reward: appliedReward,
             profile: {
                 before: beforeProfile,
                 after: this.getProfileProgressSnapshot(profile)
             },
             characters: characterChanges
         };
+    }
+
+    normalizeBattleReward(reward, battle) {
+        const appliedReward = { ...reward };
+
+        if (this.isPveBattle(battle)) {
+            delete appliedReward.ratingDelta;
+        }
+
+        return appliedReward;
+    }
+
+    isPveBattle(battle = {}) {
+        return String(battle?.mode ?? "").toUpperCase() === "PVE";
     }
 
     findHeroXpRewards(hero, reward) {
